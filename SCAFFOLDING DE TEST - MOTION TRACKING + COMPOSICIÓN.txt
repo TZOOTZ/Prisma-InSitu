@@ -1,0 +1,676 @@
+﻿SCAFFOLDING DE TEST - MOTION TRACKING + COMPOSICIÓN
+Estructura del proyecto:
+prisma_motion_test/
+├── assets/
+│   ├── test_background.mp4      # Video con marquesina en movimiento
+│   ├── test_artwork.mp4         # Video cliente 1:1 para insertar
+│   └── reference_frame.jpg      # Frame de referencia para marking
+├── src/
+│   ├── motion_tracker.py        # Core tracking logic
+│   ├── compositor.py            # Composición dinámica  
+│   ├── utils.py                 # Utilidades
+│   └── test_runner.py           # Script principal de testing
+├── output/
+│   ├── tracking_debug/          # Videos con tracking visualizado
+│   ├── composition_tests/       # Tests de composición
+│   └── final_results/           # Resultados finales
+├── requirements.txt
+└── README.md
+1. Setup de dependencias:
+python
+# requirements.txt
+opencv-python==4.8.1.78
+numpy==1.24.3
+matplotlib==3.7.1
+pillow==10.0.0
+imageio==2.31.1
+scipy==1.11.1
+streamlit==1.25.0
+2. Core Motion Tracker:
+python
+# src/motion_tracker.py
+import cv2
+import numpy as np
+import json
+from typing import List, Tuple, Optional
+
+
+class MarqueeTracker:
+    def __init__(self, debug_mode=True):
+        self.debug_mode = debug_mode
+        self.corner_trackers = []
+        self.tracking_history = []
+        self.initial_corners = None
+        
+    def setup_manual_tracking(self, first_frame: np.ndarray) -> List[Tuple[int, int]]:
+        """Setup manual corner selection for marquee"""
+        print("Click 4 corners of the marquee in clockwise order")
+        print("Press 'r' to reset, 'c' to confirm")
+        
+        self.corners = []
+        
+        def mouse_callback(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN and len(self.corners) < 4:
+                self.corners.append((x, y))
+                print(f"Corner {len(self.corners)}: ({x}, {y})")
+        
+        # Clone frame for marking
+        frame_copy = first_frame.copy()
+        cv2.namedWindow('Marquee Selection', cv2.WINDOW_RESIZABLE)
+        cv2.setMouseCallback('Marquee Selection', mouse_callback)
+        
+        while True:
+            display_frame = frame_copy.copy()
+            
+            # Draw selected corners
+            for i, corner in enumerate(self.corners):
+                cv2.circle(display_frame, corner, 5, (0, 255, 0), -1)
+                cv2.putText(display_frame, f'{i+1}', 
+                           (corner[0]+10, corner[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            # Draw lines between corners
+            if len(self.corners) > 1:
+                for i in range(len(self.corners)):
+                    cv2.line(display_frame, self.corners[i], 
+                            self.corners[(i+1) % len(self.corners)], 
+                            (255, 0, 0), 2)
+            
+            cv2.imshow('Marquee Selection', display_frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('r'):  # Reset
+                self.corners = []
+                print("Reset corners")
+            elif key == ord('c') and len(self.corners) == 4:  # Confirm
+                break
+            elif key == 27:  # ESC
+                cv2.destroyAllWindows()
+                return None
+                
+        cv2.destroyAllWindows()
+        
+        self.initial_corners = self.corners
+        return self.corners
+    
+    def initialize_trackers(self, frame: np.ndarray, corners: List[Tuple[int, int]]):
+        """Initialize individual corner trackers"""
+        self.corner_trackers = []
+        
+        for corner in corners:
+            # Create bounding box around corner
+            x, y = corner
+            bbox = (x-15, y-15, 30, 30)
+            
+            # Initialize tracker
+            tracker = cv2.TrackerCSRT_create()
+            success = tracker.init(frame, bbox)
+            
+            if success:
+                self.corner_trackers.append(tracker)
+            else:
+                print(f"Failed to initialize tracker for corner {corner}")
+                
+        print(f"Initialized {len(self.corner_trackers)} corner trackers")
+    
+    def track_frame(self, frame: np.ndarray) -> Optional[List[Tuple[int, int]]]:
+        """Track corners in current frame"""
+        if not self.corner_trackers:
+            return None
+            
+        current_corners = []
+        valid_trackers = []
+        
+        for i, tracker in enumerate(self.corner_trackers):
+            success, bbox = tracker.update(frame)
+            
+            if success:
+                # Calculate center of bounding box
+                center_x = bbox[0] + bbox[2] / 2
+                center_y = bbox[1] + bbox[3] / 2
+                current_corners.append((int(center_x), int(center_y)))
+                valid_trackers.append(tracker)
+                
+                if self.debug_mode:
+                    # Draw tracking box
+                    cv2.rectangle(frame, 
+                                (int(bbox[0]), int(bbox[1])), 
+                                (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3])), 
+                                (255, 0, 0), 2)
+                    cv2.putText(frame, f'C{i}', 
+                               (int(center_x), int(center_y)), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            else:
+                print(f"Lost tracking for corner {i}")
+                
+        self.corner_trackers = valid_trackers
+        
+        if len(current_corners) == 4:
+            self.tracking_history.append(current_corners)
+            return current_corners
+        else:
+            return None
+    
+    def smooth_tracking(self, history_window=5) -> List[List[Tuple[int, int]]]:
+        """Apply smoothing to tracking history"""
+        if len(self.tracking_history) < history_window:
+            return self.tracking_history
+            
+        smoothed_history = []
+        
+        for i in range(len(self.tracking_history)):
+            start_idx = max(0, i - history_window // 2)
+            end_idx = min(len(self.tracking_history), i + history_window // 2 + 1)
+            
+            # Average corners in window
+            smoothed_corners = []
+            for corner_idx in range(4):
+                avg_x = np.mean([self.tracking_history[j][corner_idx][0] 
+                               for j in range(start_idx, end_idx)])
+                avg_y = np.mean([self.tracking_history[j][corner_idx][1] 
+                               for j in range(start_idx, end_idx)])
+                smoothed_corners.append((int(avg_x), int(avg_y)))
+                
+            smoothed_history.append(smoothed_corners)
+            
+        return smoothed_history
+    
+    def save_tracking_data(self, filepath: str):
+        """Save tracking data to JSON"""
+        data = {
+            'initial_corners': self.initial_corners,
+            'tracking_history': self.tracking_history,
+            'smoothed_history': self.smooth_tracking()
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+            
+        print(f"Tracking data saved to {filepath}")
+3. Compositor Dinámico:
+python
+# src/compositor.py
+import cv2
+import numpy as np
+from typing import List, Tuple, Optional
+
+
+class DynamicCompositor:
+    def __init__(self, debug_mode=True):
+        self.debug_mode = debug_mode
+        
+    def calculate_homography(self, 
+                           src_corners: List[Tuple[int, int]], 
+                           dst_corners: List[Tuple[int, int]]) -> Optional[np.ndarray]:
+        """Calculate perspective transformation matrix"""
+        if len(src_corners) != 4 or len(dst_corners) != 4:
+            return None
+            
+        src_pts = np.array(src_corners, dtype=np.float32)
+        dst_pts = np.array(dst_corners, dtype=np.float32)
+        
+        try:
+            homography = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            return homography
+        except Exception as e:
+            print(f"Error calculating homography: {e}")
+            return None
+    
+    def warp_artwork(self, 
+                     artwork_frame: np.ndarray, 
+                     homography: np.ndarray, 
+                     output_shape: Tuple[int, int]) -> np.ndarray:
+        """Apply perspective warp to artwork"""
+        warped = cv2.warpPerspective(artwork_frame, homography, output_shape)
+        return warped
+    
+    def create_mask(self, 
+                    corners: List[Tuple[int, int]], 
+                    frame_shape: Tuple[int, int]) -> np.ndarray:
+        """Create mask for marquee area"""
+        mask = np.zeros(frame_shape[:2], dtype=np.uint8)
+        
+        # Create polygon mask
+        pts = np.array(corners, dtype=np.int32)
+        cv2.fillPoly(mask, [pts], 255)
+        
+        # Optional: feather edges for smoother blend
+        mask = cv2.GaussianBlur(mask, (5, 5), 0)
+        
+        return mask
+    
+    def blend_frames(self, 
+                     background: np.ndarray, 
+                     warped_artwork: np.ndarray, 
+                     mask: np.ndarray, 
+                     blend_mode='normal') -> np.ndarray:
+        """Blend warped artwork into background"""
+        # Normalize mask to 0-1 range
+        mask_norm = mask.astype(float) / 255.0
+        mask_3d = np.stack([mask_norm] * 3, axis=2)
+        
+        if blend_mode == 'normal':
+            # Simple alpha blending
+            result = background * (1 - mask_3d) + warped_artwork * mask_3d
+        elif blend_mode == 'multiply':
+            # Multiply blend mode
+            blended = (background.astype(float) * warped_artwork.astype(float)) / 255.0
+            result = background * (1 - mask_3d) + blended * mask_3d
+        elif blend_mode == 'screen':
+            # Screen blend mode
+            inv_bg = 255 - background.astype(float)
+            inv_art = 255 - warped_artwork.astype(float)
+            blended = 255 - (inv_bg * inv_art) / 255.0
+            result = background * (1 - mask_3d) + blended * mask_3d
+        else:
+            result = background * (1 - mask_3d) + warped_artwork * mask_3d
+            
+        return result.astype(np.uint8)
+    
+    def color_match(self, 
+                    artwork: np.ndarray, 
+                    background: np.ndarray, 
+                    mask: np.ndarray) -> np.ndarray:
+        """Match artwork colors to background lighting"""
+        # Extract background colors in marquee area
+        masked_bg = cv2.bitwise_and(background, background, mask=mask)
+        
+        # Calculate average color in mask area
+        mask_area = np.sum(mask > 0)
+        if mask_area == 0:
+            return artwork
+            
+        avg_bg_color = np.sum(masked_bg, axis=(0, 1)) / mask_area
+        
+        # Adjust artwork to match background tone
+        artwork_float = artwork.astype(float)
+        
+        # Simple color temperature adjustment
+        color_factor = avg_bg_color / np.mean(avg_bg_color)
+        adjusted_artwork = artwork_float * color_factor
+        
+        # Clamp values
+        adjusted_artwork = np.clip(adjusted_artwork, 0, 255)
+        
+        return adjusted_artwork.astype(np.uint8)
+4. Test Runner Principal:
+python
+# src/test_runner.py
+import cv2
+import numpy as np
+import os
+import sys
+from motion_tracker import MarqueeTracker
+from compositor import DynamicCompositor
+
+
+class PrismaMotionTest:
+    def __init__(self, output_dir="output"):
+        self.output_dir = output_dir
+        self.tracker = MarqueeTracker(debug_mode=True)
+        self.compositor = DynamicCompositor(debug_mode=True)
+        
+        # Create output directories
+        os.makedirs(f"{output_dir}/tracking_debug", exist_ok=True)
+        os.makedirs(f"{output_dir}/composition_tests", exist_ok=True)
+        os.makedirs(f"{output_dir}/final_results", exist_ok=True)
+    
+    def test_tracking_only(self, background_video_path: str):
+        """Test motion tracking without composition"""
+        print("=== TESTING MOTION TRACKING ===")
+        
+        cap = cv2.VideoCapture(background_video_path)
+        if not cap.isOpened():
+            print(f"Error: Cannot open video {background_video_path}")
+            return False
+            
+        # Get video properties
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Setup output video
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        debug_out = cv2.VideoWriter(
+            f"{self.output_dir}/tracking_debug/tracking_test.mp4",
+            fourcc, fps, (width, height)
+        )
+        
+        # Read first frame for corner selection
+        ret, first_frame = cap.read()
+        if not ret:
+            print("Error: Cannot read first frame")
+            return False
+            
+        # Manual corner selection
+        corners = self.tracker.setup_manual_tracking(first_frame)
+        if not corners:
+            print("Corner selection cancelled")
+            return False
+            
+        # Initialize trackers
+        self.tracker.initialize_trackers(first_frame, corners)
+        
+        # Process video
+        frame_count = 0
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            # Track corners
+            current_corners = self.tracker.track_frame(frame.copy())
+            
+            # Draw tracking visualization
+            if current_corners:
+                # Draw corners
+                for i, corner in enumerate(current_corners):
+                    cv2.circle(frame, corner, 8, (0, 255, 0), -1)
+                    cv2.putText(frame, f'{i+1}', 
+                               (corner[0]+10, corner[1]), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Draw marquee outline
+                pts = np.array(current_corners, dtype=np.int32)
+                cv2.polylines(frame, [pts], True, (255, 0, 0), 3)
+                
+                # Draw tracking info
+                cv2.putText(frame, f"Frame: {frame_count}", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.putText(frame, f"Corners: {len(current_corners)}/4", 
+                           (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            else:
+                cv2.putText(frame, "TRACKING LOST", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            debug_out.write(frame)
+            frame_count += 1
+            
+            if frame_count % 30 == 0:
+                print(f"Processed {frame_count} frames")
+        
+        cap.release()
+        debug_out.release()
+        
+        # Save tracking data
+        self.tracker.save_tracking_data(
+            f"{self.output_dir}/tracking_debug/tracking_data.json"
+        )
+        
+        print(f"Tracking test completed. {frame_count} frames processed.")
+        print(f"Tracking success rate: {len(self.tracker.tracking_history)}/{frame_count} frames")
+        
+        return True
+    
+    def test_composition(self, 
+                        background_video_path: str, 
+                        artwork_video_path: str, 
+                        tracking_data_path: str = None):
+        """Test full composition pipeline"""
+        print("=== TESTING COMPOSITION ===")
+        
+        # Load videos
+        bg_cap = cv2.VideoCapture(background_video_path)
+        art_cap = cv2.VideoCapture(artwork_video_path)
+        
+        if not bg_cap.isOpened() or not art_cap.isOpened():
+            print("Error: Cannot open video files")
+            return False
+        
+        # Get properties
+        fps = int(bg_cap.get(cv2.CAP_PROP_FPS))
+        width = int(bg_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(bg_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Setup output
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        comp_out = cv2.VideoWriter(
+            f"{self.output_dir}/composition_tests/composition_test.mp4",
+            fourcc, fps, (width, height)
+        )
+        
+        # Load or generate tracking data
+        if tracking_data_path and os.path.exists(tracking_data_path):
+            import json
+            with open(tracking_data_path, 'r') as f:
+                tracking_data = json.load(f)
+            corner_history = tracking_data['smoothed_history']
+        else:
+            print("No tracking data provided, running tracking first...")
+            if not self.test_tracking_only(background_video_path):
+                return False
+            corner_history = self.tracker.smooth_tracking()
+        
+        # Get artwork frame for homography calculation
+        ret, art_frame = art_cap.read()
+        if not ret:
+            print("Error: Cannot read artwork frame")
+            return False
+            
+        art_height, art_width = art_frame.shape[:2]
+        
+        # Define source corners (artwork corners)
+        art_corners = [(0, 0), (art_width, 0), (art_width, art_height), (0, art_height)]
+        
+        # Process composition
+        frame_count = 0
+        
+        while frame_count < len(corner_history):
+            ret_bg, bg_frame = bg_cap.read()
+            ret_art, art_frame = art_cap.read()
+            
+            if not ret_bg:
+                break
+                
+            # Loop artwork if shorter than background
+            if not ret_art:
+                art_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret_art, art_frame = art_cap.read()
+                
+            if not ret_art:
+                break
+            
+            # Get tracking corners for this frame
+            dst_corners = corner_history[frame_count]
+            
+            # Calculate homography
+            homography = self.compositor.calculate_homography(art_corners, dst_corners)
+            
+            if homography is not None:
+                # Warp artwork
+                warped_art = self.compositor.warp_artwork(
+                    art_frame, homography, (width, height)
+                )
+                
+                # Create mask
+                mask = self.compositor.create_mask(dst_corners, bg_frame.shape)
+                
+                # Color matching
+                color_matched_art = self.compositor.color_match(
+                    warped_art, bg_frame, mask
+                )
+                
+                # Blend frames
+                result = self.compositor.blend_frames(
+                    bg_frame, color_matched_art, mask, blend_mode='normal'
+                )
+                
+                # Add debug info
+                cv2.putText(result, f"Frame: {frame_count}", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+            else:
+                result = bg_frame
+                cv2.putText(result, "NO HOMOGRAPHY", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            comp_out.write(result)
+            frame_count += 1
+            
+            if frame_count % 30 == 0:
+                print(f"Composed {frame_count} frames")
+        
+        bg_cap.release()
+        art_cap.release()
+        comp_out.release()
+        
+        print(f"Composition test completed. {frame_count} frames processed.")
+        return True
+    
+    def run_full_test(self, background_video: str, artwork_video: str):
+        """Run complete test pipeline"""
+        print("=== RUNNING FULL PRISMA MOTION TEST ===")
+        
+        # Step 1: Test tracking
+        if not self.test_tracking_only(background_video):
+            print("Tracking test failed")
+            return False
+            
+        # Step 2: Test composition
+        tracking_data_path = f"{self.output_dir}/tracking_debug/tracking_data.json"
+        if not self.test_composition(background_video, artwork_video, tracking_data_path):
+            print("Composition test failed")
+            return False
+            
+        print("=== ALL TESTS COMPLETED SUCCESSFULLY ===")
+        return True
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: python test_runner.py <background_video> <artwork_video>")
+        sys.exit(1)
+        
+    background_video = sys.argv[1]
+    artwork_video = sys.argv[2]
+    
+    tester = PrismaMotionTest()
+    tester.run_full_test(background_video, artwork_video)
+5. Script de uso rápido:
+bash
+# run_test.sh
+#!/bin/bash
+
+
+echo "=== PRISMA MOTION TRACKING TEST ==="
+
+
+# Create test environment
+python -m venv prisma_test_env
+source prisma_test_env/bin/activate
+pip install -r requirements.txt
+
+
+# Download test videos if needed
+if [ ! -f "assets/test_background.mp4" ]; then
+    echo "Please add test_background.mp4 to assets/ folder"
+    echo "Should contain a marquee/screen with camera movement"
+fi
+
+
+if [ ! -f "assets/test_artwork.mp4" ]; then
+    echo "Please add test_artwork.mp4 to assets/ folder" 
+    echo "Should be 1:1 aspect ratio client artwork"
+fi
+
+
+# Run tests
+python src/test_runner.py assets/test_background.mp4 assets/test_artwork.mp4
+
+
+echo "Check output/ folder for results:"
+echo "- tracking_debug/: Motion tracking visualization"
+echo "- composition_tests/: Final composition results"
+6. Web Interface para testing:
+python
+# streamlit_test_app.py
+import streamlit as st
+import tempfile
+import os
+from test_runner import PrismaMotionTest
+
+
+st.title("Prisma Motion Tracking Test")
+
+
+st.markdown("""
+### Test Motion Tracking + Dynamic Composition
+Upload your videos and test the tracking pipeline.
+""")
+
+
+# File uploads
+bg_video = st.file_uploader("Background Video (with marquee)", type=['mp4', 'mov'])
+artwork_video = st.file_uploader("Artwork Video (1:1 format)", type=['mp4', 'mov'])
+
+
+if bg_video and artwork_video:
+    # Save uploaded files temporarily
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bg_path = os.path.join(temp_dir, "background.mp4")
+        art_path = os.path.join(temp_dir, "artwork.mp4")
+        
+        with open(bg_path, "wb") as f:
+            f.write(bg_video.read())
+        with open(art_path, "wb") as f:
+            f.write(artwork_video.read())
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Background Video")
+            st.video(bg_path)
+            
+        with col2:
+            st.subheader("Artwork Video")
+            st.video(art_path)
+        
+        if st.button("Run Motion Tracking Test"):
+            with st.spinner("Running motion tracking test..."):
+                tester = PrismaMotionTest(output_dir=temp_dir)
+                
+                # Run tracking test
+                if tester.test_tracking_only(bg_path):
+                    st.success("✅ Motion tracking completed!")
+                    
+                    # Show tracking result
+                    tracking_result = os.path.join(temp_dir, "tracking_debug", "tracking_test.mp4")
+                    if os.path.exists(tracking_result):
+                        st.subheader("Tracking Result")
+                        st.video(tracking_result)
+                    
+                    # Run composition test
+                    if tester.test_composition(bg_path, art_path):
+                        st.success("✅ Composition completed!")
+                        
+                        # Show final result
+                        comp_result = os.path.join(temp_dir, "composition_tests", "composition_test.mp4")
+                        if os.path.exists(comp_result):
+                            st.subheader("Final Composition")
+                            st.video(comp_result)
+                            
+                            # Download button
+                            with open(comp_result, "rb") as f:
+                                st.download_button(
+                                    "Download Result",
+                                    f.read(),
+                                    "prisma_test_result.mp4",
+                                    "video/mp4"
+                                )
+                else:
+                    st.error("❌ Motion tracking failed")
+¿Cómo usar este scaffolding?
+1. Setup básico:
+bash
+mkdir prisma_motion_test
+cd prisma_motion_test
+# Copiar todos los archivos
+pip install -r requirements.txt
+2. Test rápido:
+bash
+python src/test_runner.py assets/test_bg.mp4 assets/test_art.mp4
+3. Interface web:
+bash
+streamlit run streamlit_test_app.py

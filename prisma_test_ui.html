@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRISMA TERMINAL v1.88</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            background: #001100;
+            color: #00ff41;
+            min-height: 100vh;
+            font-weight: 400;
+            font-size: 12px;
+            line-height: 1.2;
+            overflow-x: hidden;
+        }
+
+        .terminal-container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #000800;
+            border: 2px solid #00ff41;
+            box-shadow: 
+                0 0 20px #00ff41,
+                inset 0 0 20px rgba(0, 255, 65, 0.1);
+            min-height: 100vh;
+        }
+
+        .terminal-header {
+            background: #001a00;
+            border-bottom: 1px solid #00ff41;
+            padding: 8px 16px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .terminal-title {
+            text-align: center;
+            position: relative;
+        }
+
+        .blinking-cursor {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .system-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            margin-top: 4px;
+            color: #00cc33;
+        }
+
+        .terminal-body {
+            padding: 16px;
+        }
+
+        .command-line {
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .prompt {
+            color: #ffff00;
+        }
+
+        .section-header {
+            color: #00ffff;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin: 20px 0 8px 0;
+            letter-spacing: 1px;
+            border-bottom: 1px dotted #00ff41;
+            padding-bottom: 4px;
+        }
+
+        .preview-terminal {
+            background: #000500;
+            border: 1px solid #00ff41;
+            height: 240px;
+            margin: 12px 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .drop-area {
+            border: 1px dashed #00ff41;
+            padding: 20px;
+            text-align: center;
+            background: rgba(0, 255, 65, 0.05);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .drop-area:hover {
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .drop-area.dragover {
+            background: rgba(0, 255, 65, 0.15);
+            border-style: solid;
+        }
+
+        .timeline-section {
+            background: #000300;
+            border: 1px solid #00ff41;
+            margin: 16px 0;
+            padding: 12px;
+        }
+
+        .tracks-container {
+            margin-top: 12px;
+        }
+
+        .track-line {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 11px;
+        }
+
+        .track-id {
+            width: 60px;
+            color: #ffff00;
+            font-weight: 700;
+        }
+
+        .track-name {
+            width: 120px;
+            color: #00ffff;
+        }
+
+        .track-status {
+            width: 80px;
+            font-weight: 600;
+        }
+
+        .track-status.loaded {
+            color: #00ff41;
+        }
+
+        .track-status.empty {
+            color: #ff4444;
+        }
+
+        .track-controls {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-btn {
+            background: none;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            padding: 2px 6px;
+            font-family: inherit;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .control-btn:hover {
+            background: #00ff41;
+            color: #000000;
+        }
+
+        .control-btn.active {
+            background: #00ff41;
+            color: #000000;
+        }
+
+        .transport-panel {
+            background: #000200;
+            border: 1px solid #00ff41;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .transport-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .transport-btn {
+            background: none;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            padding: 4px 8px;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: 600;
+            min-width: 50px;
+        }
+
+        .transport-btn:hover {
+            background: #00ff41;
+            color: #000000;
+            box-shadow: 0 0 8px #00ff41;
+        }
+
+        .transport-btn.active {
+            background: #ffff00;
+            color: #000000;
+        }
+
+        .timecode-display {
+            background: #000000;
+            border: 1px solid #00ff41;
+            padding: 4px 8px;
+            color: #ffff00;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .timeline-ruler {
+            background: #000000;
+            border: 1px solid #00ff41;
+            height: 20px;
+            margin: 8px 0;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .playhead {
+            position: absolute;
+            top: 0;
+            left: 0%;
+            width: 2px;
+            height: 100%;
+            background: #ffff00;
+            box-shadow: 0 0 4px #ffff00;
+            transition: left 0.1s ease;
+        }
+
+        .ruler-ticks {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+            display: flex;
+        }
+
+        .tick {
+            flex: 1;
+            border-right: 1px solid #00ff41;
+            opacity: 0.3;
+        }
+
+        .status-panel {
+            background: #000100;
+            border: 1px solid #00ff41;
+            padding: 8px;
+            margin: 12px 0;
+        }
+
+        .status-line {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            font-size: 11px;
+        }
+
+        .status-label {
+            color: #00ffff;
+            text-transform: uppercase;
+        }
+
+        .status-value {
+            color: #00ff41;
+            font-weight: 600;
+        }
+
+        .blend-panel {
+            background: #000200;
+            border: 1px solid #00ff41;
+            padding: 8px;
+            margin: 8px 0;
+            display: none;
+        }
+
+        .blend-panel.active {
+            display: block;
+        }
+
+        .blend-option {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .blend-radio {
+            width: 12px;
+            margin-right: 8px;
+            color: #00ff41;
+        }
+
+        .blend-option:hover {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        .system-log {
+            background: #000000;
+            border: 1px solid #00ff41;
+            height: 120px;
+            overflow-y: auto;
+            padding: 8px;
+            margin: 12px 0;
+            font-size: 10px;
+        }
+
+        .log-entry {
+            margin: 2px 0;
+            opacity: 0.8;
+        }
+
+        .log-timestamp {
+            color: #ffff00;
+        }
+
+        .log-level {
+            color: #00ffff;
+        }
+
+        .log-message {
+            color: #00ff41;
+        }
+
+        .preview-video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: 
+                contrast(1.2) 
+                brightness(0.9) 
+                hue-rotate(90deg);
+        }
+
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 65, 0.03) 2px,
+                rgba(0, 255, 65, 0.03) 4px
+            );
+            pointer-events: none;
+        }
+
+        .terminal-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(
+                ellipse at center,
+                rgba(0, 255, 65, 0.02) 0%,
+                transparent 70%
+            );
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        @media (max-width: 920px) {
+            .terminal-container {
+                margin: 0 10px;
+                max-width: calc(100vw - 20px);
+            }
+        }
+
+        .ascii-art {
+            font-size: 8px;
+            line-height: 1;
+            color: #00cc33;
+            text-align: center;
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal-glow"></div>
+    
+    <div class="terminal-container">
+        <div class="scanlines"></div>
+        
+        <div class="terminal-header">
+            <div class="terminal-title">
+                ╔══════════════════════════════════════════════════════════════════════════════╗<br>
+                ║                            PRISMA TERMINAL v1.88                            ║<br>
+                ║                      CHROMA COMPOSITE SUBSYSTEM ONLINE                      ║<br>
+                ╚══════════════════════════════════════════════════════════════════════════════╝
+            </div>
+            <div class="system-info">
+                <span>SYS: MAINFRAME-88</span>
+                <span>MEM: 640K</span>
+                <span>USER: OPERATOR</span>
+                <span>STATUS: <span class="blinking-cursor">READY</span></span>
+            </div>
+        </div>
+
+        <div class="terminal-body">
+            <div class="command-line">
+                <span class="prompt">C:\PRISMA></span> LOAD CHROMA_COMPOSITE.EXE
+            </div>
+
+            <div class="ascii-art">
+                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░<br>
+                ░░██████╗░██████╗░██╗░██████╗░███╗░░░███╗░█████╗░░░█████╗░██╗░░██╗██████╗░░█████╗░░░<br>
+                ░░██╔══██╗██╔══██╗██║██╔════╝░████╗░████║██╔══██╗░██╔══██╗██║░░██║██╔══██╗██╔══██╗░░<br>
+                ░░██████╔╝██████╔╝██║╚█████╗░░██╔████╔██║███████║░██║░░╚═╝███████║██████╔╝██║░░██║░░<br>
+                ░░██╔═══╝░██╔══██╗██║░╚═══██╗░██║╚██╔╝██║██╔══██║░██║░░██╗██╔══██║██╔══██╗██║░░██║░░<br>
+                ░░██║░░░░░██║░░██║██║██████╔╝░██║░╚═╝░██║██║░░██║░╚█████╔╝██║░░██║██║░░██║╚█████╔╝░░<br>
+                ░░╚═╝░░░░░╚═╝░░╚═╝╚═╝╚═════╝░░╚═╝░░░░░╚═╝╚═╝░░╚═╝░░╚═════╝░╚═╝░░╚═╝╚═╝░░╚═╝░╚════╝░░░<br>
+                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+            </div>
+
+            <div class="section-header">
+                ┌── PREVIEW MONITOR ──────────────────────────────────────────────────────────┐
+            </div>
+
+            <div class="preview-terminal" id="previewMonitor">
+                <div class="drop-area" id="dropZone">
+                    <div>
+                        ╔══════════════════════════════════════════════════════════════╗<br>
+                        ║                    DRAG USER VIDEO HERE                     ║<br>
+                        ║                    FORMAT: 1024x1024                       ║<br>
+                        ║                   METRO LAYER: LOADED                      ║<br>
+                        ╚══════════════════════════════════════════════════════════════╝
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-header">
+                ├── TRANSPORT CONTROLS ──────────────────────────────────────────────────────┤
+            </div>
+
+            <div class="transport-panel">
+                <div class="transport-controls">
+                    <button class="transport-btn" id="playBtn">PLAY</button>
+                    <button class="transport-btn" id="stopBtn">STOP</button>
+                    <button class="transport-btn" id="prevBtn"><<</button>
+                    <button class="transport-btn" id="nextBtn">>></button>
+                    <div class="timecode-display" id="timecode">00:00:00:00</div>
+                </div>
+                
+                <div class="timeline-ruler" id="timelineRuler">
+                    <div class="playhead" id="playhead"></div>
+                    <div class="ruler-ticks">
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                        <div class="tick"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-header">
+                ├── VIDEO TRACKS ────────────────────────────────────────────────────────────┤
+            </div>
+
+            <div class="timeline-section">
+                <div class="tracks-container">
+                    <div class="track-line">
+                        <div class="track-id">TRK01</div>
+                        <div class="track-name">METRO_BASE</div>
+                        <div class="track-status loaded">LOADED</div>
+                        <div class="track-controls">
+                            <button class="control-btn active" id="metroVis">VIS</button>
+                            <button class="control-btn" id="metroSet">SET</button>
+                        </div>
+                    </div>
+                    
+                    <div class="track-line">
+                        <div class="track-id">TRK02</div>
+                        <div class="track-name">USER_ART</div>
+                        <div class="track-status empty" id="artStatus">EMPTY</div>
+                        <div class="track-controls">
+                            <button class="control-btn" id="artVis">VIS</button>
+                            <button class="control-btn" id="blendBtn">BLD</button>
+                        </div>
+                    </div>
+                    
+                    <div class="track-line">
+                        <div class="track-id">TRK03</div>
+                        <div class="track-name">COMPOSITE</div>
+                        <div class="track-status empty" id="compStatus">WAIT</div>
+                        <div class="track-controls">
+                            <button class="control-btn" id="compVis">VIS</button>
+                            <button class="control-btn" id="expBtn">EXP</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="blend-panel" id="blendPanel">
+                <div class="section-header">BLEND MODES:</div>
+                <div class="blend-option" data-mode="normal">
+                    <span class="blend-radio">●</span>NORMAL
+                </div>
+                <div class="blend-option" data-mode="multiply">
+                    <span class="blend-radio">○</span>MULTIPLY
+                </div>
+                <div class="blend-option" data-mode="screen">
+                    <span class="blend-radio">○</span>SCREEN
+                </div>
+                <div class="blend-option" data-mode="overlay">
+                    <span class="blend-radio">○</span>OVERLAY
+                </div>
+            </div>
+
+            <div class="section-header">
+                ├── SYSTEM STATUS ───────────────────────────────────────────────────────────┤
+            </div>
+
+            <div class="status-panel">
+                <div class="status-line">
+                    <span class="status-label">SYSTEM STATUS:</span>
+                    <span class="status-value" id="sysStatus">READY</span>
+                </div>
+                <div class="status-line">
+                    <span class="status-label">COMPOSITE MODE:</span>
+                    <span class="status-value" id="compMode">CHROMA_KEY</span>
+                </div>
+                <div class="status-line">
+                    <span class="status-label">RESOLUTION:</span>
+                    <span class="status-value">1024x1024</span>
+                </div>
+                <div class="status-line">
+                    <span class="status-label">FRAME RATE:</span>
+                    <span class="status-value">30.00 FPS</span>
+                </div>
+            </div>
+
+            <div class="section-header">
+                └── SYSTEM LOG ──────────────────────────────────────────────────────────────┘
+            </div>
+
+            <div class="system-log" id="systemLog">
+                <div class="log-entry">
+                    <span class="log-timestamp">[12:34:56]</span>
+                    <span class="log-level">[INFO]</span>
+                    <span class="log-message">PRISMA TERMINAL INITIALIZED</span>
+                </div>
+                <div class="log-entry">
+                    <span class="log-timestamp">[12:34:57]</span>
+                    <span class="log-level">[INFO]</span>
+                    <span class="log-message">METRO BASE LAYER LOADED: metro_marquee_1024x1024.mp4</span>
+                </div>
+                <div class="log-entry">
+                    <span class="log-timestamp">[12:34:58]</span>
+                    <span class="log-level">[INFO]</span>
+                    <span class="log-message">CHROMA KEY ENGINE: READY</span>
+                </div>
+                <div class="log-entry">
+                    <span class="log-timestamp">[12:34:59]</span>
+                    <span class="log-level">[SYS]</span>
+                    <span class="log-message">WAITING FOR USER INPUT...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Terminal state
+        let isPlaying = false;
+        let currentTime = 0;
+        let totalDuration = 10;
+        let playbackInterval;
+
+        // Elements
+        const dropZone = document.getElementById('dropZone');
+        const previewMonitor = document.getElementById('previewMonitor');
+        const systemLog = document.getElementById('systemLog');
+        const playBtn = document.getElementById('playBtn');
+        const timecode = document.getElementById('timecode');
+        const playhead = document.getElementById('playhead');
+
+        // Log functions
+        function addLogEntry(level, message) {
+            const timestamp = new Date().toTimeString().substr(0, 8);
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-level">[${level}]</span>
+                <span class="log-message">${message}</span>
+            `;
+            systemLog.appendChild(entry);
+            systemLog.scrollTop = systemLog.scrollHeight;
+        }
+
+        // File drop handling
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            if (files[0]) handleVideoUpload(files[0]);
+        });
+
+        dropZone.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'video/*';
+            input.onchange = (e) => {
+                if (e.target.files[0]) handleVideoUpload(e.target.files[0]);
+            };
+            input.click();
+        });
+
+        function handleVideoUpload(file) {
+            addLogEntry('INFO', `USER VIDEO UPLOAD: ${file.name}`);
+            addLogEntry('INFO', 'ANALYZING VIDEO PROPERTIES...');
+            
+            // Update track status
+            document.getElementById('artStatus').textContent = 'LOADED';
+            document.getElementById('artStatus').className = 'track-status loaded';
+            document.getElementById('artVis').classList.add('active');
+            
+            // Update system status
+            document.getElementById('sysStatus').textContent = 'COMPOSITE_READY';
+            document.getElementById('compStatus').textContent = 'READY';
+            document.getElementById('compStatus').className = 'track-status loaded';
+            
+            // Create video preview
+            const video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.className = 'preview-video';
+            video.controls = false;
+            video.loop = true;
+            video.muted = true;
+            
+            previewMonitor.innerHTML = '';
+            previewMonitor.appendChild(video);
+            
+            addLogEntry('INFO', 'CHROMA COMPOSITE INITIALIZED');
+            addLogEntry('SYS', 'PRESS PLAY TO START COMPOSITE PREVIEW');
+        }
+
+        // Transport controls
+        function togglePlayback() {
+            if (isPlaying) {
+                pausePlayback();
+            } else {
+                startPlayback();
+            }
+        }
+
+        function startPlayback() {
+            isPlaying = true;
+            playBtn.textContent = 'PAUSE';
+            playBtn.classList.add('active');
+            
+            document.getElementById('sysStatus').textContent = 'COMPOSITING';
+            addLogEntry('SYS', 'COMPOSITE PLAYBACK STARTED');
+            
+            // Start preview video if exists
+            const video = previewMonitor.querySelector('video');
+            if (video) video.play();
+            
+            playbackInterval = setInterval(() => {
+                currentTime += 0.033;
+                if (currentTime >= totalDuration) {
+                    currentTime = 0; // Loop
+                }
+                updateTimeline();
+            }, 33);
+        }
+
+        function pausePlayback() {
+            isPlaying = false;
+            playBtn.textContent = 'PLAY';
+            playBtn.classList.remove('active');
+            
+            document.getElementById('sysStatus').textContent = 'PAUSED';
+            
+            const video = previewMonitor.querySelector('video');
+            if (video) video.pause();
+            
+            if (playbackInterval) {
+                clearInterval(playbackInterval);
+            }
+        }
+
+        function stopPlayback() {
+            pausePlayback();
+            currentTime = 0;
+            updateTimeline();
+            
+            document.getElementById('sysStatus').textContent = 'STOPPED';
+            addLogEntry('SYS', 'COMPOSITE PLAYBACK STOPPED');
+            
+            const video = previewMonitor.querySelector('video');
+            if (video) {
+                video.pause();
+                video.currentTime = 0;
+            }
+        }
+
+        function updateTimeline() {
+            const frames = Math.floor(currentTime * 30);
+            const seconds = Math.floor(currentTime) % 60;
+            const minutes = Math.floor(currentTime / 60);
+            const hours = Math.floor(currentTime / 3600);
+            
+            timecode.textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+            
+            const percentage = (currentTime / totalDuration) * 100;
+            playhead.style.left = `${percentage}%`;
+        }
+
+        // Event listeners
+        playBtn.addEventListener('click', togglePlayback);
+        document.getElementById('stopBtn').addEventListener('click', stopPlayback);
+        
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            currentTime = Math.max(0, currentTime - 0.033);
+            updateTimeline();
+        });
+        
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            currentTime = Math.min(totalDuration, currentTime + 0.033);
+            updateTimeline();
+        });
+
+        // Timeline ruler click
+        document.getElementById('timelineRuler').addEventListener('click', (e) => {
+            const rect = e.target.getBoundingClientRect();
+            const percentage = (e.clientX - rect.left) / rect.width;
+            currentTime = percentage * totalDuration;
+            updateTimeline();
+        });
+
+        // Blend mode panel
+        document.getElementById('blendBtn').addEventListener('click', () => {
+            const panel = document.getElementById('blendPanel');
+            panel.classList.toggle('active');
+            addLogEntry('SYS', panel.classList.contains('active') ? 'BLEND PANEL OPENED' : 'BLEND PANEL CLOSED');
+        });
+
+        // Blend mode selection
+        document.querySelectorAll('.blend-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.blend-radio').forEach(radio => {
+                    radio.textContent = '○';
+                });
+                option.querySelector('.blend-radio').textContent = '●';
+                
+                const mode = option.dataset.mode.toUpperCase();
+                document.getElementById('compMode').textContent = mode;
+                addLogEntry('INFO', `BLEND MODE CHANGED TO: ${mode}`);
+                
+                document.getElementById('blendPanel').classList.remove('active');
+            });
+        });
+
+        // Track visibility toggles
+        document.getElementById('metroVis').addEventListener('click', function() {
+            this.classList.toggle('active');
+            addLogEntry('SYS', `METRO TRACK: ${this.classList.contains('active') ? 'VISIBLE' : 'HIDDEN'}`);
+        });
+
+        document.getElementById('artVis').addEventListener('click', function() {
+            this.classList.toggle('active');
+            addLogEntry('SYS', `USER ART TRACK: ${this.classList.contains('active') ? 'VISIBLE' : 'HIDDEN'}`);
+        });
+
+        document.getElementById('compVis').addEventListener('click', function() {
+            this.classList.toggle('active');
+            addLogEntry('SYS', `COMPOSITE TRACK: ${this.classList.contains('active') ? 'VISIBLE' : 'HIDDEN'}`);
+        });
+
+        // Initialize
+        updateTimeline();
+        addLogEntry('SYS', 'TERMINAL READY - AWAITING USER INPUT');
+    </script>
+</body>
+</html>
